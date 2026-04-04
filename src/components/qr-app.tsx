@@ -3,9 +3,10 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import ScrollSpy from "react-scrollspy-navigation";
+import { InView } from "react-intersection-observer";
 import {
   ArrowLeft,
+  ArrowUp,
   CircleX,
   ExternalLink,
   Grid2x2,
@@ -248,6 +249,17 @@ function toSectionId(label: string) {
     .replaceAll(/^-+|-+$/g, "")}`;
 }
 
+function scrollToSection(sectionId: string) {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  document.getElementById(sectionId)?.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
+}
+
 function resolveHashRoute(hash: string): AppRoute {
   if (hash.startsWith("admin/")) {
     return {
@@ -284,6 +296,9 @@ function PublicMenu({ link }: { link: QrLink }) {
   const [viewMode, setViewMode] = useState<0 | 1 | 2>(1);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [showCategoryDetail, setShowCategoryDetail] = useState(false);
+  const [activeAllProductsGroup, setActiveAllProductsGroup] = useState<string | null>(null);
+  const [activeCategoryMenu, setActiveCategoryMenu] = useState<string | null>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<QrMenuRow | null>(null);
   const [cart, setCart] = useState<Record<number, number>>({});
   const [cartOpen, setCartOpen] = useState(false);
@@ -309,6 +324,10 @@ function PublicMenu({ link }: { link: QrLink }) {
   const favorites = useMemo(() => favoriteRows(rows), [rows]);
   const searched = useMemo(() => searchRows(rows, query), [rows, query]);
   const allGroups = useMemo(() => groupRowsByAnaMenu(rows), [rows]);
+  const totalVisibleProducts = useMemo(
+    () => allGroups.reduce((sum, group) => sum + group.items.length, 0),
+    [allGroups],
+  );
   const selectedCategory = categories.find((item) => item.anaMenuId === selectedCategoryId);
   const categoryMenus = useMemo(() => {
     const selectedName = selectedCategory?.anamenuAd;
@@ -338,6 +357,21 @@ function PublicMenu({ link }: { link: QrLink }) {
   );
   const cartCount = cartItems.reduce((sum, item) => sum + item.count, 0);
   const orderingEnabled = (link.masaid ?? "0") !== "0";
+
+  const effectiveActiveAllProductsGroup =
+    activeAllProductsGroup ?? allGroups[0]?.name ?? null;
+  const effectiveActiveCategoryMenu =
+    activeCategoryMenu ?? categoryMenus[0]?.name ?? null;
+
+  useEffect(() => {
+    const onScroll = () => {
+      setShowScrollTop(window.scrollY > 320);
+    };
+
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   const renderProductList = (items: QrMenuRow[]) => {
     if (viewMode === 2) {
@@ -488,19 +522,6 @@ function PublicMenu({ link }: { link: QrLink }) {
         >
           Tüm Ürünler
         </Button>
-        {showAllProducts ? (
-          <div className="col-span-2 flex justify-end gap-2 pt-1">
-            <Button size="icon" variant={viewMode === 0 ? "secondary" : "ghost"} onClick={() => setViewMode(0)}>
-              <LayoutList className="h-4 w-4" />
-            </Button>
-            <Button size="icon" variant={viewMode === 1 ? "secondary" : "ghost"} onClick={() => setViewMode(1)}>
-              <Grid2x2 className="h-4 w-4" />
-            </Button>
-            <Button size="icon" variant={viewMode === 2 ? "secondary" : "ghost"} onClick={() => setViewMode(2)}>
-              <List className="h-4 w-4" />
-            </Button>
-          </div>
-        ) : null}
       </div>
 
       <div className="mt-4 flex-1">
@@ -529,27 +550,30 @@ function PublicMenu({ link }: { link: QrLink }) {
               </div>
             </div>
 
-            <ScrollSpy
-              activeClass="!border-violet-500 !bg-violet-500 !text-white"
-              activeAttr
-              offsetTop={150}
-              behavior="smooth"
-              rootMargin="-18% 0px -68% 0px"
-            >
-              <div className="sticky top-2 z-20 overflow-x-auto rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-[0_18px_40px_rgba(15,23,42,0.08)] backdrop-blur">
-                <div className="flex min-w-max gap-2">
-                  {categoryMenus.map((menu) => (
-                    <a
+            <div className="sticky top-2 z-20 overflow-x-auto rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-[0_18px_40px_rgba(15,23,42,0.08)] backdrop-blur">
+              <div className="flex min-w-max gap-2">
+                {categoryMenus.map((menu) => {
+                  const sectionId = toSectionId(`${selectedCategory.anamenuAd}-${menu.name}`);
+                  return (
+                    <button
                       key={`detail-nav-${menu.name}`}
-                      href={`#${toSectionId(`${selectedCategory.anamenuAd}-${menu.name}`)}`}
-                      className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition"
+                      type="button"
+                      className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${
+                        effectiveActiveCategoryMenu === menu.name
+                          ? "border-violet-500 bg-violet-500 text-white"
+                          : "border-slate-200 bg-white text-slate-700"
+                      }`}
+                      onClick={() => {
+                        setActiveCategoryMenu(menu.name);
+                        scrollToSection(sectionId);
+                      }}
                     >
                       {menu.name}
-                    </a>
-                  ))}
-                </div>
+                    </button>
+                  );
+                })}
               </div>
-            </ScrollSpy>
+            </div>
 
             <div className="space-y-4">
               {categoryMenus.map((menu, index) => (
@@ -558,6 +582,17 @@ function PublicMenu({ link }: { link: QrLink }) {
                   id={toSectionId(`${selectedCategory.anamenuAd}-${menu.name}`)}
                   className="scroll-mt-40 space-y-3"
                 >
+                  <InView
+                    as="div"
+                    threshold={0}
+                    rootMargin="-120px 0px -70% 0px"
+                    onChange={(inView) => {
+                      if (inView) {
+                        setActiveCategoryMenu(menu.name);
+                      }
+                    }}
+                    className="h-px"
+                  />
                   <div className="flex items-center justify-between rounded-sm bg-sky-500 px-3 py-2 text-white">
                     <div className="text-sm font-black">{menu.name}</div>
                     {index === 0 ? (
@@ -587,36 +622,94 @@ function PublicMenu({ link }: { link: QrLink }) {
           )
         ) : showAllProducts ? (
           <div className="space-y-6">
-            <ScrollSpy
-              activeClass="!border-sky-500 !bg-sky-500 !text-white"
-              activeAttr
-              offsetTop={140}
-              behavior="smooth"
-              rootMargin="-20% 0px -65% 0px"
-            >
-              <div className="sticky top-2 z-20 overflow-x-auto rounded-2xl border border-slate-200 bg-white/90 p-2 shadow-[0_18px_40px_rgba(15,23,42,0.08)] backdrop-blur">
-                <div className="flex min-w-max gap-2">
-                  {allGroups.map((group) => (
-                    <a
+            <div className="sticky top-2 z-20 overflow-x-auto rounded-2xl border border-slate-200 bg-white/90 p-2 shadow-[0_18px_40px_rgba(15,23,42,0.08)] backdrop-blur">
+              <div className="flex min-w-max gap-2">
+                {allGroups.map((group) => {
+                  const sectionId = toSectionId(group.name);
+                  return (
+                    <button
                       key={`nav-${group.name}`}
-                      href={`#${toSectionId(group.name)}`}
-                      className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition"
+                      type="button"
+                      className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${
+                        effectiveActiveAllProductsGroup === group.name
+                          ? "border-sky-500 bg-sky-500 text-white"
+                          : "border-slate-200 bg-white text-slate-700"
+                      }`}
+                      onClick={() => {
+                        setActiveAllProductsGroup(group.name);
+                        scrollToSection(sectionId);
+                      }}
                     >
                       {group.name}
-                    </a>
-                  ))}
-                </div>
+                    </button>
+                  );
+                })}
               </div>
-            </ScrollSpy>
+            </div>
             {allGroups.map((group) => (
               <section
                 key={group.name}
                 id={toSectionId(group.name)}
                 className="scroll-mt-36 space-y-3"
               >
+                <InView
+                  as="div"
+                  threshold={0}
+                  rootMargin="-120px 0px -70% 0px"
+                  onChange={(inView) => {
+                    if (inView) {
+                      setActiveAllProductsGroup(group.name);
+                    }
+                  }}
+                  className="h-px"
+                />
                 <div className="flex items-center justify-between rounded-2xl bg-sky-600 px-4 py-3 text-white">
                   <h2 className="text-sm font-black uppercase tracking-[0.18em]">{group.name}</h2>
-                  <span className="text-xs font-bold opacity-80">{group.items.length} ürün</span>
+                  {group === allGroups[0] ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold opacity-90">
+                        {totalVisibleProducts} ürün
+                      </span>
+                      <Button
+                        size="icon"
+                        variant={viewMode === 0 ? "secondary" : "ghost"}
+                        onClick={() => setViewMode(0)}
+                        className={`h-8 w-8 rounded-md border border-white/30 ${
+                          viewMode === 0
+                            ? "bg-white text-sky-600 hover:bg-white"
+                            : "bg-white/12 text-white hover:bg-white/22"
+                        }`}
+                      >
+                        <LayoutList className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant={viewMode === 1 ? "secondary" : "ghost"}
+                        onClick={() => setViewMode(1)}
+                        className={`h-8 w-8 rounded-md border border-white/30 ${
+                          viewMode === 1
+                            ? "bg-white text-sky-600 hover:bg-white"
+                            : "bg-white/12 text-white hover:bg-white/22"
+                        }`}
+                      >
+                        <Grid2x2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant={viewMode === 2 ? "secondary" : "ghost"}
+                        onClick={() => setViewMode(2)}
+                        className={`h-8 w-8 rounded-md border border-white/30 ${
+                          viewMode === 2
+                            ? "bg-white text-sky-600 hover:bg-white"
+                            : "bg-white/12 text-white hover:bg-white/22"
+                        }`}
+                      >
+                        <List className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <span className="text-xs font-bold opacity-80">{group.items.length} ürün</span>
+                  )}
                 </div>
                 {renderProductList(group.items)}
               </section>
@@ -637,6 +730,7 @@ function PublicMenu({ link }: { link: QrLink }) {
                       type="button"
                       onClick={() => {
                         setSelectedCategoryId(item.anaMenuId ?? null);
+                        setActiveCategoryMenu(null);
                         setShowCategoryDetail(true);
                       }}
                       className="group overflow-hidden rounded-[28px] border border-slate-200 bg-white text-left shadow-[0_16px_36px_rgba(15,23,42,0.08)]"
@@ -668,6 +762,7 @@ function PublicMenu({ link }: { link: QrLink }) {
                       type="button"
                       onClick={() => {
                         setSelectedCategoryId(item.anaMenuId ?? null);
+                        setActiveCategoryMenu(null);
                         setShowCategoryDetail(true);
                       }}
                       className="group overflow-hidden rounded-[28px] border border-slate-200 bg-white text-left shadow-[0_16px_36px_rgba(15,23,42,0.08)] transition"
@@ -790,6 +885,17 @@ function PublicMenu({ link }: { link: QrLink }) {
           </Button>
         </DialogContent>
       </Dialog>
+
+      {showScrollTop ? (
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          className="fixed bottom-24 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-slate-900 text-white shadow-[0_16px_36px_rgba(15,23,42,0.3)] transition hover:bg-slate-800 sm:bottom-20 sm:right-6"
+          aria-label="Yukarı çık"
+        >
+          <ArrowUp className="h-5 w-5" />
+        </button>
+      ) : null}
     </div>
   );
 }
