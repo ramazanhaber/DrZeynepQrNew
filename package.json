@@ -7,6 +7,7 @@
     "build": "next build",
     "prestart": "kill-port 8461 || echo port 8461 zaten bos",
     "start": "next build && next start -p 8461",
+    "publish": "node scripts/publish.mjs",
     "lint": "eslint",
     "test": "vitest run"
   },
